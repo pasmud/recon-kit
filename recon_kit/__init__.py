@@ -1,0 +1,1 @@
+"""Offline asset inventory comparison."""

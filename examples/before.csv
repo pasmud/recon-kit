@@ -1,0 +1,4 @@
+asset_id,hostname,ip,owner
+retired-01,old.example.test,192.0.2.30,Operations
+APP-01,API.Example.Test.,2001:0db8:0:0:0:0:0:10,Platform
+shared-01,shared.example.test,192.0.2.20,"Data, Inc."

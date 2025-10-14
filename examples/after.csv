@@ -1,0 +1,4 @@
+asset_id,hostname,ip,owner
+shared-01,SHARED.example.test.,192.0.2.20,"Data, Inc."
+worker-01,worker.example.test,198.51.100.30,
+app-01,api.example.test,2001:db8::10,Application Services
