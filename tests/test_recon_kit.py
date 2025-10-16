@@ -117,6 +117,23 @@ class SnapshotTests(unittest.TestCase):
             with self.subTest(field=field, row=row):
                 self.assert_invalid(HEADER + row, field)
 
+    def test_record_size_counts_characters_without_bom_or_line_ending(self):
+        row = "a,host,," + " " * (4096 - len("a,host,,") - 1) + "é"
+        for ending in ("", "\n", "\r\n", "\r"):
+            with self.subTest(ending=ending):
+                header = "\ufeff" + HEADER.rstrip("\n") + (ending or "\n")
+                self.assertEqual(self.load(header + row + ending)["a"].owner, "é")
+                self.assert_invalid(header + row + " " + ending,
+                                    "line 2: CSV record exceeds 4096 characters")
+
+    def test_record_size_is_checked_before_parsing_the_header(self):
+        self.assert_invalid('"' * 5000, "line 1: CSV record exceeds 4096 characters")
+
+    def test_snapshot_row_limit_excludes_header(self):
+        text = HEADER + "".join(f"node-{i},host,,\n" for i in range(10_000))
+        self.assertEqual(len(self.load(text)), 10_000)
+        self.assert_invalid(text + "extra,host,,", "line 10002: snapshot exceeds 10000 data rows")
+
     def test_rejects_duplicate_normalized_id_with_both_lines(self):
         self.assert_invalid(
             HEADER + "node-a,host,,\nnode-b,,192.0.2.3,\n NODE-A ,other,,\n",
@@ -242,6 +259,15 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "")
                 self.assertIn("invalid.csv", result.stderr)
                 self.assertIn("line 3: duplicate asset_id (first seen on line 2)", result.stderr)
+
+    def test_oversized_record_has_no_report(self):
+        good = self.snapshot("valid.csv", "a,host,,")
+        bad = self.snapshot("oversized.csv", "a,host,," + " " * 4096)
+        result = self.run_cli(good, bad)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("oversized.csv", result.stderr)
+        self.assertIn("line 2: CSV record exceeds 4096 characters", result.stderr)
 
     def test_unreadable_input_has_no_report(self):
         result = self.run_cli(EXAMPLES / "before.csv", self.directory / "missing.csv")

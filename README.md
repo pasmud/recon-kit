@@ -91,6 +91,10 @@ cache-02,,2001:db8::4,
   fields containing commas, and double a literal quote inside a quoted field.
   Each record occupies one line; blank lines and multiline fields are rejected.
   A header-only snapshot represents zero assets; a zero-byte file is invalid.
+- Each record (including the header) is limited to 4,096 Unicode characters
+  before parsing, including quotes, delimiters, and padding but excluding the
+  optional BOM and line ending. Each snapshot may contain up to 10,000 data rows.
+  Exceeding either limit is an input error, not a truncated comparison.
 - Leading and trailing ASCII spaces and tabs are trimmed from data values.
   Provide at least one of `hostname` and `ip`. Blank `hostname`, `ip`, and
   `owner` values become JSON `null`.

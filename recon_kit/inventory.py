@@ -6,10 +6,12 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import TextIO, TypedDict
 
 TRACKED_FIELDS = ("hostname", "ip", "owner")
 COLUMNS = ("asset_id", *TRACKED_FIELDS)
+MAX_RECORD_CHARS = 4096
+MAX_SNAPSHOT_ROWS = 10_000
 ASSET_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 # csv.reader(strict=True) still accepts bare quotes within unquoted fields.
@@ -37,9 +39,15 @@ class Report(TypedDict):
     changed: list[dict[str, object]]
 
 
-def _records(lines: Iterator[str]) -> Iterator[tuple[int, list[str]]]:
+def _records(stream: TextIO) -> Iterator[tuple[int, list[str]]]:
+    # Universal newlines translate each line ending to a single character.
+    lines = iter(lambda: stream.readline(MAX_RECORD_CHARS + 1), "")
     for number, line in enumerate(lines, start=1):
-        record = line.removesuffix("\n").removesuffix("\r")
+        if number > MAX_SNAPSHOT_ROWS + 1:
+            raise SnapshotError(f"line {number}: snapshot exceeds {MAX_SNAPSHOT_ROWS} data rows")
+        record = line.removesuffix("\n")
+        if len(record) > MAX_RECORD_CHARS:
+            raise SnapshotError(f"line {number}: CSV record exceeds {MAX_RECORD_CHARS} characters")
         if not CSV_RECORD.fullmatch(record):
             raise SnapshotError(f"line {number}: invalid CSV quoting")
         try:
@@ -86,7 +94,7 @@ def load_snapshot(path: Path) -> dict[str, Asset]:
     assets: dict[str, Asset] = {}
     first_seen: dict[str, int] = {}
     try:
-        with path.open(encoding="utf-8-sig", newline="") as stream:
+        with path.open(encoding="utf-8-sig") as stream:
             records = _records(stream)
             _, header = next(records, (0, []))
             if len(header) != len(COLUMNS) or set(header) != set(COLUMNS):
