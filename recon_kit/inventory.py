@@ -31,12 +31,17 @@ class Asset:
     owner: str | None
 
 
+class ChangedAsset(TypedDict):
+    asset_id: str
+    fields: dict[str, dict[str, str | None]]
+
+
 class Report(TypedDict):
     schema_version: int
     counts: dict[str, int]
     added: list[dict[str, str | None]]
     removed: list[dict[str, str | None]]
-    changed: list[dict[str, object]]
+    changed: list[ChangedAsset]
 
 
 def _records(stream: TextIO) -> Iterator[tuple[int, list[str]]]:
@@ -131,7 +136,7 @@ def compare_snapshots(before: Mapping[str, Asset], after: Mapping[str, Asset]) -
     """Summarize drift in normalized records, ordered by asset ID."""
     added = [asdict(after[key]) for key in sorted(after.keys() - before.keys())]
     removed = [asdict(before[key]) for key in sorted(before.keys() - after.keys())]
-    changed: list[dict[str, object]] = []
+    changed: list[ChangedAsset] = []
 
     for key in sorted(before.keys() & after.keys()):
         if before[key] == after[key]:

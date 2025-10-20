@@ -69,14 +69,33 @@ esac
 
 | Status | Meaning |
 | --- | --- |
-| `0` | Valid snapshots, no drift. The report has empty arrays and zero counts. |
-| `1` | Valid snapshots, drift detected. The full report is still written. |
-| `2` | Invalid usage or input. Diagnostics go to stderr; no JSON is written. |
+| `0` | Valid snapshots, no drift. The report has zero counts. |
+| `1` | Valid snapshots, drift detected. The report is still written. |
+| `2` | Invalid usage or input. Diagnostics go to stderr; no report is written. |
 
 Both snapshots must validate before a report is printed. Row errors include the
 file path and one-based physical line number, counting the header as line 1.
 Duplicate ID errors also give the first occurrence's line. Unreadable files and
 invalid UTF-8 are reported at file level. `python3 -m recon_kit --help` shows usage.
+
+## Text summary
+
+JSON is the default. For a shorter view, use `--format summary`:
+
+```sh
+python3 -m recon_kit --format summary examples/before.csv examples/after.csv
+```
+
+```text
+Added: 1  Removed: 1  Changed: 1
++ worker-01
+- retired-01
+~ app-01: owner
+```
+
+The summary lists asset IDs in order within each group, with alphabetized field
+names for changed assets. Use JSON for before and after values. Both formats use
+the same exit statuses.
 
 ## Snapshot format
 

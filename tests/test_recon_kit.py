@@ -200,6 +200,23 @@ class CliTests(unittest.TestCase):
             }},
         ])
 
+    def test_summary_reports_counts_and_changed_field_names_without_values(self):
+        result = self.run_cli(
+            "--format", "summary", EXAMPLES / "before.csv", EXAMPLES / "after.csv",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(
+            result.stdout, "Added: 1  Removed: 1  Changed: 1\n"
+            "+ worker-01\n- retired-01\n~ app-01: owner\n",
+        )
+
+    def test_empty_summary_reports_zero_counts_and_success(self):
+        snapshot = self.snapshot("same.csv", "a,host,,")
+        result = self.run_cli("--format", "summary", snapshot, snapshot)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Added: 0  Removed: 0  Changed: 0\n")
+
     def test_equivalent_snapshots_return_zero(self):
         before = self.snapshot("old.csv", "N-1,API.Example.Test.,2001:0DB8::0010,Ops")
         after = self.snapshot("new.csv", "n-1,api.example.test,2001:db8::10, Ops ")
@@ -230,7 +247,7 @@ class CliTests(unittest.TestCase):
             "r1,r1.example.test,,", "c1,c1.example.test,,old",
         )
         new_rows = (
-            "a2,a2.example.test,,", "c2,c2.example.test,,new",
+            "a2,a2.example.test,,", "c2,new-c2.example.test,,new",
             "a1,a1.example.test,,", "c1,c1.example.test,,new",
         )
         original = self.run_cli(
@@ -248,6 +265,17 @@ class CliTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertEqual([row["asset_id"] for row in report[kind]],
                                  [prefix + "1", prefix + "2"])
+        for suffix in ("", "-reordered"):
+            with self.subTest(summary=suffix):
+                summary = self.run_cli(
+                    "--format", "summary", self.directory / f"old{suffix}.csv",
+                    self.directory / f"new{suffix}.csv",
+                )
+                self.assertEqual(summary.returncode, 1, summary.stderr)
+                self.assertEqual(
+                    summary.stdout, "Added: 2  Removed: 2  Changed: 2\n"
+                    "+ a1\n+ a2\n- r1\n- r2\n~ c1: owner\n~ c2: hostname, owner\n",
+                )
 
     def test_invalid_snapshot_has_no_partial_report(self):
         good = self.snapshot("valid.csv", "a,genuine.example.test,,")
