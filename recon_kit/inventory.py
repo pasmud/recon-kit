@@ -3,7 +3,7 @@
 import csv
 import ipaddress
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TextIO, TypedDict
@@ -132,8 +132,15 @@ def load_snapshot(path: Path) -> dict[str, Asset]:
     return assets
 
 
-def compare_snapshots(before: Mapping[str, Asset], after: Mapping[str, Asset]) -> Report:
-    """Summarize drift in normalized records, ordered by asset ID."""
+def compare_snapshots(
+    before: Mapping[str, Asset], after: Mapping[str, Asset], *,
+    ignore_fields: Collection[str] = (),
+) -> Report:
+    """Summarize drift by ID, ignoring selected fields only for shared assets."""
+    ignored = frozenset(ignore_fields)
+    if unknown := ignored.difference(TRACKED_FIELDS):
+        raise ValueError(f"cannot ignore fields: {', '.join(sorted(unknown))}")
+    tracked = [field for field in TRACKED_FIELDS if field not in ignored]
     added = [asdict(after[key]) for key in sorted(after.keys() - before.keys())]
     removed = [asdict(before[key]) for key in sorted(before.keys() - after.keys())]
     changed: list[ChangedAsset] = []
@@ -144,10 +151,11 @@ def compare_snapshots(before: Mapping[str, Asset], after: Mapping[str, Asset]) -
         old, new = asdict(before[key]), asdict(after[key])
         fields = {
             field: {"before": old[field], "after": new[field]}
-            for field in TRACKED_FIELDS
+            for field in tracked
             if old[field] != new[field]
         }
-        changed.append({"asset_id": key, "fields": fields})
+        if fields:
+            changed.append({"asset_id": key, "fields": fields})
 
     return {
         "schema_version": 1,

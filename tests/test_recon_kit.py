@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from recon_kit.inventory import Asset, SnapshotError, load_snapshot
+from recon_kit.inventory import Asset, SnapshotError, compare_snapshots, load_snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
@@ -146,6 +146,12 @@ class SnapshotTests(unittest.TestCase):
             load_snapshot(self.path)
 
 
+class ComparisonTests(unittest.TestCase):
+    def test_cannot_ignore_identity_in_python_api(self):
+        with self.assertRaisesRegex(ValueError, "cannot ignore fields: asset_id"):
+            compare_snapshots({}, {}, ignore_fields=("asset_id",))
+
+
 class CliTests(unittest.TestCase):
     def setUp(self):
         directory = self.enterContext(
@@ -216,6 +222,40 @@ class CliTests(unittest.TestCase):
         result = self.run_cli("--format", "summary", snapshot, snapshot)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "Added: 0  Removed: 0  Changed: 0\n")
+
+    def test_ignoring_only_difference_returns_success(self):
+        before = self.snapshot("old.csv", "a,host,,Ops")
+        after = self.snapshot("new.csv", "a,host,,New Team")
+        result = self.run_cli("--ignore-field", "owner", before, after)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["counts"], {"added": 0, "removed": 0, "changed": 0})
+        self.assertEqual(report["changed"], [])
+
+    def test_repeatable_ignore_fields_preserve_other_drift_and_membership(self):
+        before = self.snapshot(
+            "old.csv", "a,host,192.0.2.1,Ops", "b,old-host,,Ops", "gone,host,,Old",
+        )
+        after = self.snapshot(
+            "new.csv", "a,host,192.0.2.2,New", "b,new-host,,New", "added,host,,New",
+        )
+        result = self.run_cli("--ignore-field", "owner", "--ignore-field", "ip", before, after)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["counts"], {"added": 1, "removed": 1, "changed": 1})
+        self.assertEqual(report["changed"], [
+            {"asset_id": "b", "fields": {"hostname": {"before": "old-host", "after": "new-host"}}},
+        ])
+        self.assertEqual(report["added"][0]["owner"], "New")
+        self.assertEqual(report["removed"][0]["owner"], "Old")
+
+    def test_ignored_fields_are_still_validated(self):
+        before = self.snapshot("old.csv", "a,host,,Ops")
+        after = self.snapshot("new.csv", "a,host,," + "a" * 201)
+        result = self.run_cli("--ignore-field", "owner", before, after)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("line 2: owner must be at most 200 printable characters", result.stderr)
 
     def test_equivalent_snapshots_return_zero(self):
         before = self.snapshot("old.csv", "N-1,API.Example.Test.,2001:0DB8::0010,Ops")

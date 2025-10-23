@@ -6,7 +6,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from .inventory import Report, SnapshotError, compare_snapshots, load_snapshot
+from .inventory import (
+    TRACKED_FIELDS,
+    Report,
+    SnapshotError,
+    compare_snapshots,
+    load_snapshot,
+)
 
 
 def _summary(report: Report) -> str:
@@ -34,6 +40,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--format", choices=("json", "summary"), default="json",
         help="report format (default: json)",
     )
+    parser.add_argument(
+        "--ignore-field", action="append", choices=TRACKED_FIELDS, default=[],
+        help="ignore changes to this field on shared assets (repeatable)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -43,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{parser.prog}: error: {exc}", file=sys.stderr)
         return 2
 
-    report = compare_snapshots(before, after)
+    report = compare_snapshots(before, after, ignore_fields=args.ignore_field)
     if args.format == "summary":
         print(_summary(report))
     else:

@@ -97,6 +97,16 @@ The summary lists asset IDs in order within each group, with alphabetized field
 names for changed assets. Use JSON for before and after values. Both formats use
 the same exit statuses.
 
+## Ignore selected field changes
+
+Use `--ignore-field owner` when an ownership update is expected and you want to
+review other drift. Repeat `--ignore-field` to ignore more fields (`hostname`,
+`ip`, or `owner`). An asset present in both snapshots counts as changed only if
+at least one non-ignored field differs. If there are no such differences and no
+additions or removals, the comparison exits `0`. Added and removed assets still
+count as drift and retain all fields in JSON. Both snapshots are fully validated,
+including ignored fields; `asset_id` cannot be ignored.
+
 ## Snapshot format
 
 ```csv
