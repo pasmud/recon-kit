@@ -6,7 +6,7 @@ import re
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TextIO, TypedDict
+from typing import NotRequired, TextIO, TypedDict
 
 TRACKED_FIELDS = ("hostname", "ip", "owner")
 COLUMNS = ("asset_id", *TRACKED_FIELDS)
@@ -23,6 +23,10 @@ class SnapshotError(ValueError):
     """A snapshot could not be opened or did not meet the input contract."""
 
 
+class ComparisonError(ValueError):
+    """An unsupported comparison option was supplied."""
+
+
 @dataclass(frozen=True, slots=True)
 class Asset:
     asset_id: str
@@ -36,12 +40,20 @@ class ChangedAsset(TypedDict):
     fields: dict[str, dict[str, str | None]]
 
 
+class Scope(TypedDict):
+    asset_id_prefix: str
+    matched_before: int
+    matched_after: int
+    outside_counts: dict[str, int]
+
+
 class Report(TypedDict):
     schema_version: int
     counts: dict[str, int]
     added: list[dict[str, str | None]]
     removed: list[dict[str, str | None]]
     changed: list[ChangedAsset]
+    scope: NotRequired[Scope]
 
 
 def _records(stream: TextIO) -> Iterator[tuple[int, list[str]]]:
@@ -134,12 +146,19 @@ def load_snapshot(path: Path) -> dict[str, Asset]:
 
 def compare_snapshots(
     before: Mapping[str, Asset], after: Mapping[str, Asset], *,
-    ignore_fields: Collection[str] = (),
+    ignore_fields: Collection[str] = (), asset_id_prefix: str | None = None,
 ) -> Report:
-    """Summarize drift by ID, ignoring selected fields only for shared assets."""
+    """Summarize drift by ID, optionally limiting details to IDs with a prefix."""
     ignored = frozenset(ignore_fields)
     if unknown := ignored.difference(TRACKED_FIELDS):
-        raise ValueError(f"cannot ignore fields: {', '.join(sorted(unknown))}")
+        raise ComparisonError(f"cannot ignore fields: {', '.join(sorted(unknown))}")
+    if asset_id_prefix is not None:
+        if not ASSET_ID.fullmatch(asset_id_prefix):
+            raise ComparisonError(
+                "asset ID prefix must be 1 to 128 ASCII letters, digits, dots, "
+                "underscores, or hyphens, starting with a letter or digit"
+            )
+        asset_id_prefix = asset_id_prefix.lower()
     tracked = [field for field in TRACKED_FIELDS if field not in ignored]
     added = [asdict(after[key]) for key in sorted(after.keys() - before.keys())]
     removed = [asdict(before[key]) for key in sorted(before.keys() - after.keys())]
@@ -157,10 +176,32 @@ def compare_snapshots(
         if fields:
             changed.append({"asset_id": key, "fields": fields})
 
-    return {
+    scope = None
+    if asset_id_prefix is not None:
+        totals = {"added": len(added), "removed": len(removed), "changed": len(changed)}
+        matched_before = {key for key in before if key.startswith(asset_id_prefix)}
+        matched_after = {key for key in after if key.startswith(asset_id_prefix)}
+        added = [asset for asset in added if asset["asset_id"] in matched_after]
+        removed = [asset for asset in removed if asset["asset_id"] in matched_before]
+        changed = [asset for asset in changed if asset["asset_id"] in matched_after]
+        scope = Scope(
+            asset_id_prefix=asset_id_prefix,
+            matched_before=len(matched_before),
+            matched_after=len(matched_after),
+            outside_counts={
+                "added": totals["added"] - len(added),
+                "removed": totals["removed"] - len(removed),
+                "changed": totals["changed"] - len(changed),
+            },
+        )
+
+    report: Report = {
         "schema_version": 1,
         "counts": {"added": len(added), "removed": len(removed), "changed": len(changed)},
         "added": added,
         "removed": removed,
         "changed": changed,
     }
+    if scope is not None:
+        report["scope"] = scope
+    return report

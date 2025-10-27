@@ -107,6 +107,20 @@ additions or removals, the comparison exits `0`. Added and removed assets still
 count as drift and retain all fields in JSON. Both snapshots are fully validated,
 including ignored fields; `asset_id` cannot be ignored.
 
+## Focus on an asset ID prefix
+
+Use `--asset-id-prefix app-` to show details only for IDs starting with `app-`.
+The prefix follows the asset ID character and length rules and is matched
+case-insensitively against the same normalized IDs in both snapshots. Both
+snapshots are still validated in full, and status `1` still means drift anywhere
+under the current comparison policy, even if no IDs match the prefix.
+
+With this option, the JSON arrays and `counts` describe the selection. A `scope`
+object records the normalized `asset_id_prefix`, `matched_before` and
+`matched_after` inventory sizes, and `outside_counts` for added, removed, and
+changed assets outside the selection. The text summary shows the same counts.
+Rerun without the prefix to see the details for all drift.
+
 ## Snapshot format
 
 ```csv

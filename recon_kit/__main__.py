@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .inventory import (
     TRACKED_FIELDS,
+    ComparisonError,
     Report,
     SnapshotError,
     compare_snapshots,
@@ -15,11 +16,22 @@ from .inventory import (
 )
 
 
+def _counts_line(counts: dict[str, int]) -> str:
+    return f"Added: {counts['added']}  Removed: {counts['removed']}  Changed: {counts['changed']}"
+
+
 def _summary(report: Report) -> str:
-    counts = report["counts"]
-    lines = [
-        f"Added: {counts['added']}  Removed: {counts['removed']}  Changed: {counts['changed']}"
-    ]
+    counts_line = _counts_line(report["counts"])
+    if scope := report.get("scope"):
+        selection = f"Scope: asset ID prefix {scope['asset_id_prefix']!r}"
+        matches = f"before: {scope['matched_before']}, after: {scope['matched_after']}"
+        lines = [
+            f"{selection} ({matches})",
+            f"In scope: {counts_line}",
+            f"Outside scope: {_counts_line(scope['outside_counts'])}",
+        ]
+    else:
+        lines = [counts_line]
     lines.extend(f"+ {asset['asset_id']}" for asset in report["added"])
     lines.extend(f"- {asset['asset_id']}" for asset in report["removed"])
     for asset in report["changed"]:
@@ -44,21 +56,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--ignore-field", action="append", choices=TRACKED_FIELDS, default=[],
         help="ignore changes to this field on shared assets (repeatable)",
     )
+    parser.add_argument(
+        "--asset-id-prefix", metavar="PREFIX",
+        help="show details for IDs starting with PREFIX; count other drift separately",
+    )
     args = parser.parse_args(argv)
 
     try:
         before = load_snapshot(args.before)
         after = load_snapshot(args.after)
-    except SnapshotError as exc:
+        report = compare_snapshots(
+            before, after, ignore_fields=args.ignore_field, asset_id_prefix=args.asset_id_prefix,
+        )
+    except (ComparisonError, SnapshotError) as exc:
         print(f"{parser.prog}: error: {exc}", file=sys.stderr)
         return 2
 
-    report = compare_snapshots(before, after, ignore_fields=args.ignore_field)
     if args.format == "summary":
         print(_summary(report))
     else:
         print(json.dumps(report, indent=2, sort_keys=True))
-    return int(any(report["counts"].values()))
+    scope = report.get("scope")
+    outside_counts = scope["outside_counts"] if scope else {}
+    return int(any(report["counts"].values()) or any(outside_counts.values()))
 
 
 if __name__ == "__main__":

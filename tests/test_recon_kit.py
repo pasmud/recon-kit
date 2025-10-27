@@ -257,6 +257,63 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("line 2: owner must be at most 200 printable characters", result.stderr)
 
+    def test_prefix_scopes_details_and_counts_excluded_drift(self):
+        before = self.snapshot(
+            "old.csv", "lab-gone,host,,", "lab-edit,old,,Ops", "lab-same,host,,",
+            "other-gone,host,,", "other-edit,old,,", "other-owner,host,,Ops",
+        )
+        after = self.snapshot(
+            "new.csv", "LAB-NEW,host,,", "LAB-EDIT,new,,New", "lab-same,host,,",
+            "other-new,host,,", "other-edit,new,,", "other-owner,host,,New",
+        )
+        result = self.run_cli("--asset-id-prefix", "LAB-", "--ignore-field", "owner", before, after)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr, "")
+        report = json.loads(result.stdout)
+        self.assertEqual(report["counts"], {"added": 1, "removed": 1, "changed": 1})
+        self.assertEqual(report["scope"], {
+            "asset_id_prefix": "lab-", "matched_before": 3, "matched_after": 3,
+            "outside_counts": {"added": 1, "removed": 1, "changed": 1},
+        })
+        self.assertEqual([asset["asset_id"] for asset in report["added"]], ["lab-new"])
+        self.assertEqual([asset["asset_id"] for asset in report["removed"]], ["lab-gone"])
+        self.assertEqual(report["changed"], [
+            {"asset_id": "lab-edit", "fields": {"hostname": {"before": "old", "after": "new"}}},
+        ])
+
+    def test_prefix_with_no_matches_does_not_hide_drift_in_summary(self):
+        before = EXAMPLES / "before.csv"
+        after = EXAMPLES / "after.csv"
+        for current, status, outside_count in ((after, 1, 1), (before, 0, 0)):
+            with self.subTest(status=status):
+                result = self.run_cli(
+                    "--asset-id-prefix", "absent-", "--format", "summary", before, current,
+                )
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(
+                    result.stdout, "Scope: asset ID prefix 'absent-' (before: 0, after: 0)\n"
+                    "In scope: Added: 0  Removed: 0  Changed: 0\n"
+                    f"Outside scope: Added: {outside_count}  Removed: {outside_count}  "
+                    f"Changed: {outside_count}\n",
+                )
+
+    def test_prefix_does_not_skip_validation_outside_selection(self):
+        before = self.snapshot("old.csv", "lab-a,host,,")
+        after = self.snapshot("new.csv", "lab-a,host,,", "outside,,192.0.2.999,")
+        result = self.run_cli("--asset-id-prefix", "lab-", before, after)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("line 3: ip must be an IPv4 or IPv6 address", result.stderr)
+
+    def test_invalid_prefix_is_rejected(self):
+        snapshot = EXAMPLES / "before.csv"
+        for prefix in ("", "lab-*", "é", "a" * 129):
+            with self.subTest(prefix=prefix):
+                result = self.run_cli(f"--asset-id-prefix={prefix}", snapshot, snapshot)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("asset ID prefix must be 1 to 128 ASCII", result.stderr)
+
     def test_equivalent_snapshots_return_zero(self):
         before = self.snapshot("old.csv", "N-1,API.Example.Test.,2001:0DB8::0010,Ops")
         after = self.snapshot("new.csv", "n-1,api.example.test,2001:db8::10, Ops ")
