@@ -1,0 +1,4 @@
+owner,ip,hostname,asset_id
+Lab Operations,198.51.100.40,BACKUP.Example.Test.,LAB-BACKUP
+"Operations, West",192.0.2.20,MONITOR.Example.Test.,EDGE-MONITOR
+ Network Operations,2001:0DB8:0000:0000:0000:0000:0000:0010,GATEWAY.Example.Test.,EDGE-GATEWAY

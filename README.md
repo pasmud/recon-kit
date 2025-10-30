@@ -121,6 +121,58 @@ object records the normalized `asset_id_prefix`, `matched_before` and
 changed assets outside the selection. The text summary shows the same counts.
 Rerun without the prefix to see the details for all drift.
 
+## Walkthrough: review a planned address change
+
+The synthetic snapshots in `examples/review/` model a planned IPv6 change on
+`edge-gateway` (`2001:db8::10` to `2001:db8::11`) and an expected owner handoff for
+the edge assets. No assets are scheduled for removal. Run these from the repo root.
+
+First compare the baseline with a re-export that reorders rows and columns and
+uses uppercase IDs, DNS names with final dots, and expanded IPv6 notation:
+
+```sh
+status=0
+python3 -m recon_kit --format summary examples/review/before.csv examples/review/reexport.csv \
+  || status=$?
+printf 'status=%s\n' "$status"
+```
+
+The summary has zero counts and status `0`: these are different representations
+of the same inventory. Now focus on the edge assets and ignore the planned owner
+changes on shared assets:
+
+```sh
+status=0
+python3 -m recon_kit --format summary --asset-id-prefix EDGE- --ignore-field owner \
+  examples/review/before.csv examples/review/candidate.csv || status=$?
+printf 'status=%s\n' "$status"
+```
+
+```text
+Scope: asset ID prefix 'edge-' (before: 2, after: 2)
+In scope: Added: 0  Removed: 0  Changed: 1
+Outside scope: Added: 0  Removed: 1  Changed: 0
+~ edge-gateway: ip
+status=1
+```
+
+Status `1` means the snapshots are valid and there is drift to review. Status `2`
+would mean the comparison failed; fix the diagnostic before making a decision.
+To identify the removal and verify the address values, keep the same field
+policy but drop the prefix and let the CLI print JSON:
+
+```sh
+status=0
+python3 -m recon_kit --ignore-field owner \
+  examples/review/before.csv examples/review/candidate.csv || status=$?
+printf 'status=%s\n' "$status"
+```
+
+The `ip` change matches the planned values, but `lab-backup` is missing. **Do not
+promote the candidate to the next baseline** until the lab team confirms the
+removal is intended or corrects the export. A missing row alone doesn't establish
+retirement.
+
 ## Snapshot format
 
 ```csv

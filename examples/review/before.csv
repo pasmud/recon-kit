@@ -1,0 +1,4 @@
+asset_id,hostname,ip,owner
+edge-gateway,gateway.example.test,2001:db8::10,Network Operations
+edge-monitor,monitor.example.test,192.0.2.20,"Operations, West"
+lab-backup,backup.example.test,198.51.100.40,Lab Operations

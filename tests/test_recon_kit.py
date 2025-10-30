@@ -314,6 +314,34 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "")
                 self.assertIn("asset ID prefix must be 1 to 128 ASCII", result.stderr)
 
+    def test_review_workflow_reexport_has_no_drift(self):
+        review = EXAMPLES / "review"
+        result = self.run_cli(
+            "--format", "summary", review / "before.csv", review / "reexport.csv",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Added: 0  Removed: 0  Changed: 0\n")
+
+    def test_review_workflow_candidate_requires_follow_up(self):
+        review = EXAMPLES / "review"
+        args = ("--ignore-field", "owner", review / "before.csv", review / "candidate.csv")
+        scoped = self.run_cli("--format", "summary", "--asset-id-prefix", "EDGE-", *args)
+        self.assertEqual(scoped.returncode, 1, scoped.stderr)
+        self.assertEqual(
+            scoped.stdout, "Scope: asset ID prefix 'edge-' (before: 2, after: 2)\n"
+            "In scope: Added: 0  Removed: 0  Changed: 1\n"
+            "Outside scope: Added: 0  Removed: 1  Changed: 0\n~ edge-gateway: ip\n",
+        )
+        full = self.run_cli(*args)
+        self.assertEqual(full.returncode, 1, full.stderr)
+        report = json.loads(full.stdout)
+        self.assertEqual([asset["asset_id"] for asset in report["removed"]], ["lab-backup"])
+        self.assertEqual(report["changed"], [
+            {"asset_id": "edge-gateway", "fields": {
+                "ip": {"before": "2001:db8::10", "after": "2001:db8::11"},
+            }},
+        ])
+
     def test_equivalent_snapshots_return_zero(self):
         before = self.snapshot("old.csv", "N-1,API.Example.Test.,2001:0DB8::0010,Ops")
         after = self.snapshot("new.csv", "n-1,api.example.test,2001:db8::10, Ops ")
